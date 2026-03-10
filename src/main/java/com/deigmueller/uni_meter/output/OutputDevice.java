@@ -560,7 +560,9 @@ public abstract class OutputDevice extends AbstractBehavior<OutputDevice.Command
     parameters.put("power-offset-l2", offsetPhase1);
     parameters.put("power-offset-l3", offsetPhase2);
     parameters.put("power-offset-total", offsetPhase0 + offsetPhase1 + offsetPhase2);
-    
+    parameters.put("charge-cap", chargeCap);
+    parameters.put("discharge-cap", dischargeCap);
+
     return parameters;
   }
   
@@ -641,6 +643,8 @@ public abstract class OutputDevice extends AbstractBehavior<OutputDevice.Command
            "power-offset-l2",
            "power-offset-l3",
            "power-offset-total" -> checkDoubleParameter(key, value);
+      case "charge-cap",
+           "discharge-cap" -> checkNullableDoubleParameter(key, value);
       default -> throw new BadRequestException("unknown parameter '" + key + "'");
     };
   }
@@ -657,6 +661,19 @@ public abstract class OutputDevice extends AbstractBehavior<OutputDevice.Command
     } catch (Exception e) {
       throw new BadRequestException("no valid double value for parameter '" + key + "'");
     }
+  }
+
+  /**
+   * Check a nullable double parameter (allows "null" as value)
+   * @param key Name of the parameter
+   * @param value Value of the parameter
+   * @return Checked double parameter
+   */
+  protected ParameterValue checkNullableDoubleParameter(@NotNull String key, @NotNull String value) {
+    if ("null".equalsIgnoreCase(value)) {
+      return new ParameterValue(key, null);
+    }
+    return checkDoubleParameter(key, value);
   }
 
   /**
@@ -706,6 +723,8 @@ public abstract class OutputDevice extends AbstractBehavior<OutputDevice.Command
         offsetPhase1 = (double) parameterValue.value() / 3.0;
         offsetPhase2 = (double) parameterValue.value() / 3.0;
       }
+      case "charge-cap" -> chargeCap = (Double) parameterValue.value();
+      case "discharge-cap" -> dischargeCap = (Double) parameterValue.value();
       default -> throw new BadRequestException("unknown parameter '" + parameterValue.parameter() + "'");
     }
     logger.info("changing {} to {}", parameterValue.parameter(), parameterValue.value());
