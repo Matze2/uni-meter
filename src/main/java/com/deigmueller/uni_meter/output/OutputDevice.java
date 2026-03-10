@@ -71,6 +71,9 @@ public abstract class OutputDevice extends AbstractBehavior<OutputDevice.Command
   private EnergyData energyPhase1 = new EnergyData(0, 0);
   private Instant lastEnergyPhase2Update = Instant.now();
   private EnergyData energyPhase2 = new EnergyData(0, 0);
+
+  private Double chargeCap = null;
+  private Double dischargeCap = null;
   
   protected OutputDevice(@NotNull ActorContext<Command> context,
                          @NotNull ActorRef<UniMeter.Command> controller,
@@ -283,10 +286,14 @@ public abstract class OutputDevice extends AbstractBehavior<OutputDevice.Command
   protected @NotNull Behavior<Command> onNotifyPhasePowerData(@NotNull NotifyPhasePowerData message) {
     logger.trace("OutputDevice.onNotifyPhasePowerData()");
 
+    if (chargeCap != null || dischargeCap != null) {
+      logger.warn("Power capping not supported for single-phase notifications. charge-cap={}, discharge-cap={}", chargeCap, dischargeCap);
+    }
+
     switch (message.phaseId()) {
-      case 0 -> setPowerPhase0(message.data());
-      case 1 -> setPowerPhase1(message.data());
-      case 2 -> setPowerPhase2(message.data());
+      case 0 -> setPowerPhase0(message.data(), null);
+      case 1 -> setPowerPhase1(message.data(), null);
+      case 2 -> setPowerPhase2(message.data(), null);
     }
 
     message.replyTo().tell(new Ack(message.messageId()));
@@ -303,10 +310,16 @@ public abstract class OutputDevice extends AbstractBehavior<OutputDevice.Command
    */
   protected @NotNull Behavior<Command> onNotifyPhasesPowerData(@NotNull NotifyPhasesPowerData message) {
     logger.trace("OutputDevice.onNotifyPhasesPowerData()");
-    
-    setPowerPhase0(message.phase1());
-    setPowerPhase1(message.phase2());
-    setPowerPhase2(message.phase3());
+
+    double totalPower = message.phase1().power() + message.phase2().power() + message.phase3().power();
+    Double capFactor = calculateCapFactor(totalPower);
+    logger.debug("cap factor: {}, totalPower: {}, phase1: {}, phase2: {}, phase3: {}",
+        capFactor, totalPower, message.phase1().power(), message.phase2().power(),
+        message.phase3().power());
+
+    setPowerPhase0(message.phase1(), capFactor);
+    setPowerPhase1(message.phase2(), capFactor);
+    setPowerPhase2(message.phase3(), capFactor);
 
     message.replyTo().tell(new Ack(message.messageId()));
 
@@ -329,6 +342,9 @@ public abstract class OutputDevice extends AbstractBehavior<OutputDevice.Command
     double phaseApparentPower = Math.round(data.apparentPower() / 3.0 * 100.0) / 100.0;
     double phaseCurrent = Math.round(data.current() / 3.0 * 100.0) / 100.0;
     
+    Double capFactor = calculateCapFactor(phasePower * 3.0);
+    logger.debug("cap factor: {}", capFactor);
+
     PowerData phasePowerData = new PowerData(
             phasePower, 
             phaseApparentPower, 
@@ -337,9 +353,9 @@ public abstract class OutputDevice extends AbstractBehavior<OutputDevice.Command
             data.voltage(), 
             data.frequency()); 
 
-    setPowerPhase0(phasePowerData);
-    setPowerPhase1(phasePowerData);
-    setPowerPhase2(phasePowerData);
+    setPowerPhase0(phasePowerData, capFactor);
+    setPowerPhase1(phasePowerData, capFactor);
+    setPowerPhase2(phasePowerData, capFactor);
 
     message.replyTo().tell(new Ack(message.messageId()));
 
@@ -405,9 +421,9 @@ public abstract class OutputDevice extends AbstractBehavior<OutputDevice.Command
     return Behaviors.same();
   }
   
-  protected void setPowerPhase0(@NotNull PowerData powerPhase0) {
+  protected void setPowerPhase0(@NotNull PowerData powerPhase0, @Nullable Double capFactor) {
     this.lastPowerPhase0Update = Instant.now();
-    this.powerPhase0 = powerPhase0.adjustPower(offsetPhase0);
+    this.powerPhase0 = powerPhase0.adjustPower(offsetPhase0, capFactor);
     logger.debug("power phase 0: {}", this.powerPhase0);
   }
   
@@ -427,9 +443,9 @@ public abstract class OutputDevice extends AbstractBehavior<OutputDevice.Command
     return new PowerData(0, 0, 0, 0, getDefaultVoltage(), getDefaultFrequency());
   }
   
-  protected void setPowerPhase1(@NotNull PowerData powerPhase1) {
+  protected void setPowerPhase1(@NotNull PowerData powerPhase1, @Nullable Double capFactor) {
     this.lastPowerPhase1Update = Instant.now();
-    this.powerPhase1 = powerPhase1.adjustPower(offsetPhase1);
+    this.powerPhase1 = powerPhase1.adjustPower(offsetPhase1, capFactor);
     logger.debug("power phase 1: {}", this.powerPhase1);
   }
   
@@ -449,9 +465,9 @@ public abstract class OutputDevice extends AbstractBehavior<OutputDevice.Command
     return new PowerData(0, 0, 0, 0, getDefaultVoltage(), getDefaultFrequency());
   }
   
-  protected void setPowerPhase2(@NotNull PowerData powerPhase2) {
+  protected void setPowerPhase2(@NotNull PowerData powerPhase2, @Nullable Double capFactor) {
     this.lastPowerPhase2Update = Instant.now();
-    this.powerPhase2 = powerPhase2.adjustPower(offsetPhase2);
+    this.powerPhase2 = powerPhase2.adjustPower(offsetPhase2, capFactor);
     logger.debug("power phase 2: {}", this.powerPhase2);
   }
   
@@ -470,7 +486,27 @@ public abstract class OutputDevice extends AbstractBehavior<OutputDevice.Command
     }
     return new PowerData(0, 0, 0, 0, getDefaultVoltage(), getDefaultFrequency());
   }
-  
+
+  private @Nullable Double calculateCapFactor(double totalPower) {
+    if (totalPower >= 0) {
+      // Discharging (positive power) - check dischargeCap
+      if (dischargeCap == null || totalPower <= dischargeCap) {
+        return null;
+      }
+      return dischargeCap / totalPower;
+    }
+
+    // Charging (negative power) - check chargeCap
+    if (chargeCap == null) {
+      return null;
+    }
+    double chargingPower = -totalPower; // Convert to absolute value
+    if (chargingPower <= chargeCap) {
+      return null;
+    }
+    return chargeCap / chargingPower; // Cap factor is positive
+  }
+
   protected void setEnergyPhase0(@NotNull EnergyData energyPhase0) {
     this.lastEnergyPhase0Update = Instant.now();
     this.energyPhase0 = energyPhase0;
@@ -790,15 +826,18 @@ public abstract class OutputDevice extends AbstractBehavior<OutputDevice.Command
         double voltage,
         double frequency
   ) {
-    public PowerData adjustPower(double offset) {
-      if (offset == 0) {
+    public PowerData adjustPower(double offset, @Nullable Double capFactor) {
+      if (offset == 0 && (capFactor == null || capFactor == 1.0)) {
         return this;
-      } else {
-        double adjustedPower = power + offset;
-        double adjustedApparentPower = adjustedPower * powerFactor;
-        double adjustedCurrent = adjustedPower / voltage;
-        return new PowerData(adjustedPower, adjustedApparentPower, powerFactor, adjustedCurrent, voltage, frequency);
       }
+      double adjustedPower = power;
+      if (capFactor != null && capFactor != 1.0) {
+        adjustedPower *= capFactor;
+      }
+      adjustedPower += offset;
+      double adjustedApparentPower = adjustedPower * powerFactor;
+      double adjustedCurrent = adjustedPower / voltage;
+      return new PowerData(adjustedPower, adjustedApparentPower, powerFactor, adjustedCurrent, voltage, frequency);
     }
   }
   
