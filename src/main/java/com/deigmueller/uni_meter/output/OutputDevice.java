@@ -91,6 +91,7 @@ public abstract class OutputDevice extends AbstractBehavior<OutputDevice.Command
     this.usageConstraintInitDuration = config.getDuration("usage-constraint-init-duration");
     
     initPowerOffsets(config);
+    initPowerCaps(config);
 
     if (config.hasPath("client-contexts")) {
       clientContextsInitializer.initClientContexts(
@@ -582,6 +583,18 @@ public abstract class OutputDevice extends AbstractBehavior<OutputDevice.Command
       }
     } else {
       logger.info("using phase power offsets: L1={}, L2={}, L3={}", offsetPhase0, offsetPhase1, offsetPhase2);
+    }
+  }
+
+  protected void initPowerCaps(@NotNull Config config) {
+    if (config.hasPath("charge-cap") && !config.getIsNull("charge-cap")) {
+      chargeCap = config.getDouble("charge-cap");
+      logger.info("using charge cap of {}", chargeCap);
+    }
+    
+    if (config.hasPath("discharge-cap") && !config.getIsNull("discharge-cap")) {
+      dischargeCap = config.getDouble("discharge-cap");
+      logger.info("using discharge cap of {}", dischargeCap);
     }
   }
 
