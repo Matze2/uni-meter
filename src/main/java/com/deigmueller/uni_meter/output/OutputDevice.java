@@ -532,6 +532,10 @@ public abstract class OutputDevice extends AbstractBehavior<OutputDevice.Command
       parameters.put("usage-constraint-until", usageConstraintUntil.toString());
     }
 
+    if (Instant.now().isBefore(offUntil)) {
+      parameters.put("off-until", offUntil.toString());
+    }
+
     return parameters;
   }
   
