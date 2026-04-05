@@ -695,6 +695,9 @@ public abstract class OutputDevice extends AbstractBehavior<OutputDevice.Command
       case NO_DISCHARGE -> lastUsageConstraintPower > 0 && power > 0;
     };
     
+    logger.debug("checking usage constraint: usageConstraint={}, lastUsageConstraintPower={}, power={}, result={}", 
+          usageConstraint, lastUsageConstraintPower, power, result);
+    
     lastUsageConstraintPower = power;
     
     return result;
