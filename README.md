@@ -20,7 +20,7 @@ The real electrical meter data can be gathered from the following input devices:
 
 - AMIS Reader
 - Emlog smart meter
-- Fronius smart meter
+- Fronius smart meter (via generic HTTP or via Modbus TCP of a Fronius Symo inverter)
 - Generic HTTP (configurable HTTP interface, usable for many devices)
 - Home Assistant sensors
 - Huawei Inverter (DTSU666-H)

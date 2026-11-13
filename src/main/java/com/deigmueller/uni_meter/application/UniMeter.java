@@ -4,6 +4,7 @@ import com.deigmueller.uni_meter.input.InputDevice;
 import com.deigmueller.uni_meter.input.device.refoss.em06p.RefossEm06p;
 import com.deigmueller.uni_meter.input.device.generic_http.GenericHttp;
 import com.deigmueller.uni_meter.input.device.home_assistant.HomeAssistant;
+import com.deigmueller.uni_meter.input.device.modbus.fronius.FroniusSymo;
 import com.deigmueller.uni_meter.input.device.modbus.huawei.HuaweiInverter;
 import com.deigmueller.uni_meter.input.device.modbus.ksem.Ksem;
 import com.deigmueller.uni_meter.input.device.modbus.sdm120.Sdm120;
@@ -331,6 +332,16 @@ public class UniMeter extends AbstractBehavior<UniMeter.Command> {
         return getContext().spawn(
               Behaviors.supervise(
                     Sungrow.create(
+                          output,
+                          getContext().getSystem().settings().config().getConfig(inputDeviceConfigPath))
+              ).onFailure(SupervisorStrategy.restartWithBackoff(minBackoff, maxBackoff, jitter)),
+              "input");
+      }
+      
+      case FroniusSymo.TYPE -> {
+        return getContext().spawn(
+              Behaviors.supervise(
+                    FroniusSymo.create(
                           output,
                           getContext().getSystem().settings().config().getConfig(inputDeviceConfigPath))
               ).onFailure(SupervisorStrategy.restartWithBackoff(minBackoff, maxBackoff, jitter)),
